@@ -296,23 +296,27 @@ function render(){
 }
 
 async function fetchVoz(extra){
+  const target = `${APPS_SCRIPT_URL}?${extra||''}_=${Date.now()}`;
   const attempts=[
-    u=>u,
-    u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}&_=${Date.now()}`,
-    u=>`https://corsproxy.io/?${encodeURIComponent(u)}&_=${Date.now()}`
+    u=>u,                                                             // direta
+    u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`,          // proxy 1
+    u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, // proxy 2
+    u=>`https://thingproxy.freeboard.io/fetch/${u}`,                  // proxy 3
+    u=>`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}` // proxy 4
   ];
-  let json=null,lastErr='';
+  let lastErr='';
   for(const mk of attempts){
     try{
-      const res=await fetch(mk(`${APPS_SCRIPT_URL}?${extra||''}_=${Date.now()}`),{signal:AbortSignal.timeout(40000),cache:'no-store',redirect:'follow'});
+      const res=await fetch(mk(target),{signal:AbortSignal.timeout(30000),cache:'no-store',redirect:'follow'});
       if(!res.ok){lastErr='HTTP '+res.status;continue;}
       const text=await res.text();
       if(!text||text.trimStart().startsWith('<')){lastErr='resposta não-JSON';continue;}
-      json=JSON.parse(text);break;
+      const json=JSON.parse(text);
+      if(json && json.ok!==false) return json;
+      lastErr=(json&&json.error)||'resposta inválida';
     }catch(e){lastErr=e.message;}
   }
-  if(!json) throw new Error(lastErr||'sem resposta');
-  return json;
+  throw new Error(lastErr||'sem resposta');
 }
 
 // Carga normal: lê o cache (rápido).
