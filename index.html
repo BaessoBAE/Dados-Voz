@@ -183,6 +183,7 @@
   <div class="header-right">
     <span class="status-dot" id="statusDot"></span>
     <span class="status-text" id="statusText">Carregando...</span>
+    <a class="refresh-btn" href="index.html" style="text-decoration:none;border-color:var(--green);color:var(--green)">💬 WhatsApp</a>
     <button class="refresh-btn" onclick="loadData()">↻ Atualizar</button>
   </div>
 </header>
@@ -305,7 +306,7 @@ async function loadData(){
   let json=null,lastErr='';
   for(const mk of attempts){
     try{
-      const res=await fetch(mk(`${APPS_SCRIPT_URL}?_=${Date.now()}`),{signal:AbortSignal.timeout(40000),cache:'no-store',redirect:'follow'});
+      const res=await fetch(mk(`${APPS_SCRIPT_URL}?nocache=1&_=${Date.now()}`),{signal:AbortSignal.timeout(40000),cache:'no-store',redirect:'follow'});
       if(!res.ok){lastErr='HTTP '+res.status;continue;}
       const text=await res.text();
       if(!text||text.trimStart().startsWith('<')){lastErr='resposta não-JSON';continue;}
