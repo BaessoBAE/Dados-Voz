@@ -184,7 +184,7 @@
     <span class="status-dot" id="statusDot"></span>
     <span class="status-text" id="statusText">Carregando...</span>
     <a class="refresh-btn" href="index.html" style="text-decoration:none;border-color:var(--green);color:var(--green)">💬 WhatsApp</a>
-    <button class="refresh-btn" onclick="loadData()">↻ Atualizar</button>
+    <button class="refresh-btn" onclick="refreshData()">↻ Atualizar</button>
   </div>
 </header>
 
@@ -295,9 +295,7 @@ function render(){
     </div>`;
 }
 
-async function loadData(){
-  setStatus('Carregando...', false);
-  if(APPS_SCRIPT_URL.includes('COLE_A_URL')){ setStatus('Configure a URL do Apps Script', false); document.getElementById('content').innerHTML='<div style="padding:2rem;text-align:center;color:var(--amber)">Cole a URL /exec do Apps Script da Voz na constante APPS_SCRIPT_URL (ou salve em localStorage ak_voz_script).</div>'; return; }
+async function fetchVoz(extra){
   const attempts=[
     u=>u,
     u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}&_=${Date.now()}`,
@@ -306,19 +304,57 @@ async function loadData(){
   let json=null,lastErr='';
   for(const mk of attempts){
     try{
-      const res=await fetch(mk(`${APPS_SCRIPT_URL}?nocache=1&_=${Date.now()}`),{signal:AbortSignal.timeout(40000),cache:'no-store',redirect:'follow'});
+      const res=await fetch(mk(`${APPS_SCRIPT_URL}?${extra||''}_=${Date.now()}`),{signal:AbortSignal.timeout(40000),cache:'no-store',redirect:'follow'});
       if(!res.ok){lastErr='HTTP '+res.status;continue;}
       const text=await res.text();
       if(!text||text.trimStart().startsWith('<')){lastErr='resposta não-JSON';continue;}
       json=JSON.parse(text);break;
     }catch(e){lastErr=e.message;}
   }
-  if(!json||json.ok===false){ setStatus('Erro ao carregar', false); document.getElementById('content').innerHTML=`<div style="padding:2rem;text-align:center;color:var(--red)">Falha: ${(json&&json.error)||lastErr}</div>`; return; }
-  if(!json.voz||!json.voz.length){ setStatus('Sem dados (rode warmCacheVoz)', false); document.getElementById('content').innerHTML='<div style="padding:2rem;text-align:center;color:var(--amber)">Cache vazio. Rode warmCacheVoz no Apps Script.</div>'; return; }
-  vozData=explodeVoz(json.voz);
-  console.log(`📞 Voz: ${json.voz.length} combinações → ${vozData.length} ligações`);
-  render();
-  setStatus(`Atualizado ✓ — ${vozData.length.toLocaleString('pt-BR')} ligações`, true);
+  if(!json) throw new Error(lastErr||'sem resposta');
+  return json;
+}
+
+// Carga normal: lê o cache (rápido).
+async function loadData(){
+  setStatus('Carregando...', false);
+  if(APPS_SCRIPT_URL.includes('COLE_A_URL')){ setStatus('Configure a URL do Apps Script', false); return; }
+  try{
+    const json=await fetchVoz('');
+    if(json.ok===false) throw new Error(json.error||'erro');
+    if(!json.voz||!json.voz.length){
+      setStatus('Sem dados — clique Atualizar', false);
+      document.getElementById('content').innerHTML='<div style="padding:2rem;text-align:center;color:var(--amber)">Cache vazio. Clique em <strong>↻ Atualizar</strong> para processar a planilha.</div>';
+      return;
+    }
+    vozData=explodeVoz(json.voz);
+    render();
+    setStatus(`Atualizado ✓ — ${vozData.length.toLocaleString('pt-BR')} ligações`, true);
+  }catch(e){
+    setStatus('Erro ao carregar', false);
+    document.getElementById('content').innerHTML=`<div style="padding:2rem;text-align:center;color:var(--red)">Falha: ${e.message}</div>`;
+  }
+}
+
+// Botão Atualizar: dispara o reprocessamento no FUNDO e recarrega em ~8s.
+async function refreshData(){
+  setStatus('Processando planilha...', false);
+  try{
+    await fetchVoz('action=refresh&');   // agenda o warmCacheVoz no servidor
+    let tentativas=0;
+    const poll=async()=>{
+      tentativas++;
+      const json=await fetchVoz('');
+      if(json.voz&&json.voz.length){
+        vozData=explodeVoz(json.voz); render();
+        setStatus(`Atualizado ✓ — ${vozData.length.toLocaleString('pt-BR')} ligações`, true);
+        return;
+      }
+      if(tentativas<6){ setStatus(`Processando... (${tentativas})`, false); setTimeout(poll, 4000); }
+      else setStatus('Ainda processando — clique Atualizar em instantes', false);
+    };
+    setTimeout(poll, 6000);   // dá tempo do gatilho rodar
+  }catch(e){ setStatus('Erro: '+e.message, false); }
 }
 
 loadData();
